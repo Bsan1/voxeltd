@@ -256,24 +256,29 @@ namespace Pathfinding
         // cell. If blocked, slide along one axis (organic wall-follow).
         private Vector3 KeepOutOfBuildings(Vector3 from, Vector3 candidate)
         {
-            if (grid == null || !grid.IsOccupied(grid.WorldToCell(candidate)))
+            if (grid == null || !IsPathBlocked(grid.WorldToCell(candidate)))
             {
                 return candidate;
             }
 
             Vector3 xOnly = new Vector3(candidate.x, gridY, from.z);
-            if (!grid.IsOccupied(grid.WorldToCell(xOnly)))
+            if (!IsPathBlocked(grid.WorldToCell(xOnly)))
             {
                 return xOnly;
             }
 
             Vector3 zOnly = new Vector3(from.x, gridY, candidate.z);
-            if (!grid.IsOccupied(grid.WorldToCell(zOnly)))
+            if (!IsPathBlocked(grid.WorldToCell(zOnly)))
             {
                 return zOnly;
             }
 
             return new Vector3(from.x, gridY, from.z);
+        }
+
+        private bool IsPathBlocked(Vector2Int cell)
+        {
+            return flowField != null ? flowField.IsBlocked(cell) : grid != null && grid.IsOccupied(cell);
         }
     }
 }

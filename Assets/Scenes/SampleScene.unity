@@ -590,7 +590,6 @@ MonoBehaviour:
     EnableNetworkLogs: 1
     NetworkTopology: 0
     UseCMBService: 0
-    AutoSpawnPlayerPrefabClientSide: 1
     NetworkProfilingMetrics: 1
     OldPrefabList: []
   RunInBackground: 1

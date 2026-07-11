@@ -17,9 +17,29 @@ public sealed class PlayerBall : MonoBehaviour
     [Tooltip("Top horizontal rolling speed (units/s).")]
     [SerializeField] private float maxSpeed = 8f;
 
+    [Header("Friction / Stopping")]
+    [Tooltip("Horizontal deceleration when grounded with no input. Medium values create a short roll-out before stopping.")]
+    [SerializeField, Min(0f)] private float stoppingFriction = 8f;
+
+    [Header("Air Control")]
+    [Tooltip("0..1 multiplier on movement acceleration while airborne, so mid-air steering is weaker than ground steering.")]
+    [SerializeField, Range(0f, 1f)] private float airControl = 0.5f;
+
     [Header("Weight")]
     [Tooltip("Rigidbody mass. Higher = the agent crowd shoves the ball around less.")]
     [SerializeField, Min(0.1f)] private float mass = 8f;
+
+    [Header("Max Fall Speed")]
+    [Tooltip("Terminal velocity cap for downward Y speed only. Upward motion and horizontal speed are unaffected.")]
+    [SerializeField, Min(0f)] private float maxFallSpeed = 25f;
+
+    [Header("Bounciness")]
+    [Tooltip("0..1 bounciness applied through a runtime PhysicsMaterial on the SphereCollider.")]
+    [SerializeField, Range(0f, 1f)] private float bounciness = 0.1f;
+
+    [Header("Turn Responsiveness")]
+    [Tooltip("Extra acceleration multiplier when input opposes the current horizontal velocity.")]
+    [SerializeField, Min(0f)] private float turnResponsiveness = 2f;
 
     [Header("Jump")]
     [SerializeField] private bool allowJump = true;
@@ -31,17 +51,24 @@ public sealed class PlayerBall : MonoBehaviour
     [SerializeField, Min(1f)] private float lowJumpMultiplier = 2.5f;
 
     private Rigidbody body;
+    private SphereCollider sphereCollider;
     private Transform cam;
     private bool jumpHeld;
 
     private void Awake()
     {
         body = GetComponent<Rigidbody>();
+        sphereCollider = GetComponent<SphereCollider>();
         body.isKinematic = false;
         body.useGravity = true;
         body.mass = mass;
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.Continuous;
+        sphereCollider.material = new PhysicsMaterial
+        {
+            bounciness = bounciness,
+            bounceCombine = PhysicsMaterialCombine.Maximum
+        };
         ResolveCamera();
     }
 
@@ -61,8 +88,15 @@ public sealed class PlayerBall : MonoBehaviour
 
     private void FixedUpdate()
     {
-        body.AddForce(ReadMoveDirection() * acceleration, ForceMode.Acceleration);
+        Vector3 moveDirection = ReadMoveDirection();
+        bool grounded = IsGrounded();
+        float controlMultiplier = grounded ? 1f : airControl;
+
+        body.AddForce(moveDirection * acceleration * controlMultiplier, ForceMode.Acceleration);
+        ApplyCounterSteer(moveDirection, controlMultiplier);
+        ApplyStoppingFriction(moveDirection, grounded);
         ApplyWeight();
+        ClampFallSpeed();
         ClampHorizontalSpeed();
     }
 
@@ -122,6 +156,50 @@ public sealed class PlayerBall : MonoBehaviour
         else if (vy > 0f && !jumpHeld)
         {
             body.linearVelocity += Vector3.up * Physics.gravity.y * (lowJumpMultiplier - 1f) * Time.fixedDeltaTime;
+        }
+    }
+
+    private void ApplyStoppingFriction(Vector3 moveDirection, bool grounded)
+    {
+        if (!grounded || moveDirection.sqrMagnitude > 0.0001f)
+        {
+            return;
+        }
+
+        Vector3 vel = body.linearVelocity;
+        Vector3 flat = new Vector3(vel.x, 0f, vel.z);
+        flat = Vector3.MoveTowards(flat, Vector3.zero, stoppingFriction * Time.fixedDeltaTime);
+        body.linearVelocity = new Vector3(flat.x, vel.y, flat.z);
+    }
+
+    private void ApplyCounterSteer(Vector3 moveDirection, float controlMultiplier)
+    {
+        if (moveDirection.sqrMagnitude <= 0.0001f)
+        {
+            return;
+        }
+
+        Vector3 vel = body.linearVelocity;
+        Vector3 flat = new Vector3(vel.x, 0f, vel.z);
+        if (flat.sqrMagnitude <= 0.0001f)
+        {
+            return;
+        }
+
+        Vector3 inputDir = moveDirection.normalized;
+        Vector3 velocityDir = flat.normalized;
+        if (Vector3.Dot(inputDir, velocityDir) < 0f)
+        {
+            body.AddForce(inputDir * acceleration * turnResponsiveness * controlMultiplier, ForceMode.Acceleration);
+        }
+    }
+
+    private void ClampFallSpeed()
+    {
+        Vector3 vel = body.linearVelocity;
+        if (vel.y < -maxFallSpeed)
+        {
+            body.linearVelocity = new Vector3(vel.x, -maxFallSpeed, vel.z);
         }
     }
 

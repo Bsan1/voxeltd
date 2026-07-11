@@ -23,6 +23,7 @@ namespace Pathfinding
 
         [Header("References")]
         [SerializeField] private GridBuildSystem grid;
+        [SerializeField] private BuildPlacementController buildController;
 
         [Header("Goal")]
         [SerializeField] private Vector2Int goalCell;
@@ -44,10 +45,13 @@ namespace Pathfinding
         public bool HasValidGoal => hasValidGoal;
         public int RebuildCount { get; private set; }
         public GridBuildSystem Grid => grid;
+        public BuildPlacementController BuildController => buildController;
         public Vector2Int ActiveGoal => activeGoal;
 
         private bool dirty;
         private Vector2Int activeGoal;
+        private GridBuildSystem subscribedGrid;
+        private BuildPlacementController subscribedBuildController;
 
         // BFS step-distance from this cell to the goal (the integration field).
         // Used for continuous gradient steering. False if out of bounds or
@@ -74,17 +78,13 @@ namespace Pathfinding
 
         private void Awake()
         {
-            ResolveGrid();
+            ResolveReferences();
             EnsureCapacity();
         }
 
         private void OnEnable()
         {
-            ResolveGrid();
-            if (grid != null)
-            {
-                grid.OccupancyChanged += HandleOccupancyChanged;
-            }
+            ResolveReferences();
         }
 
         private void Start()
@@ -97,10 +97,7 @@ namespace Pathfinding
 
         private void OnDisable()
         {
-            if (grid != null)
-            {
-                grid.OccupancyChanged -= HandleOccupancyChanged;
-            }
+            ClearSubscriptions();
         }
 
         public void SetGoal(Vector2Int goal)
@@ -121,7 +118,7 @@ namespace Pathfinding
 
         public void Rebuild()
         {
-            ResolveGrid();
+            ResolveReferences();
             EnsureCapacity();
             ClearFields();
 
@@ -131,7 +128,7 @@ namespace Pathfinding
             activeGoal = ResolveGoal();
             hasValidGoal = grid != null
                 && grid.InBounds(activeGoal)
-                && !grid.IsOccupied(activeGoal);
+                && !IsBlocked(activeGoal);
 
             if (!hasValidGoal)
             {
@@ -206,7 +203,7 @@ namespace Pathfinding
 
         public Vector2Int NextCell(Vector2Int from)
         {
-            if (!CanUseCell(from))
+            if (!CanUseCell(from) || IsCellBlocked(from))
             {
                 return from;
             }
@@ -218,7 +215,7 @@ namespace Pathfinding
             }
 
             Vector2Int next = from + step;
-            return CanUseCell(next) ? next : from;
+            return CanUseCell(next) && !IsCellBlocked(next) ? next : from;
         }
 
         public Vector3 SampleDirection(Vector3 worldPosition)
@@ -244,7 +241,17 @@ namespace Pathfinding
 
         public bool HasPath(Vector2Int from)
         {
-            return CanUseCell(from) && integration[ToIndex(from)] != int.MaxValue;
+            return CanUseCell(from) && !IsCellBlocked(from) && integration[ToIndex(from)] != int.MaxValue;
+        }
+
+        public bool IsBlocked(Vector2Int cell)
+        {
+            if (grid == null)
+            {
+                ResolveReferences();
+            }
+
+            return IsCellBlocked(cell);
         }
 
         public bool HasPathFromCell(int x, int y)
@@ -254,13 +261,14 @@ namespace Pathfinding
 
         public string GetDebugSummary()
         {
-            return $"{nameof(GridFlowField)} goal={goalCell} valid={hasValidGoal} size={cachedWidth}x{cachedHeight} rebuilds={RebuildCount} reachable={(integration != null ? GetReachableCellCount() : 0)}";
+            string source = buildController != null ? "build-controller+grid" : "grid";
+            return $"{nameof(GridFlowField)} goal={goalCell} valid={hasValidGoal} size={cachedWidth}x{cachedHeight} rebuilds={RebuildCount} reachable={(integration != null ? GetReachableCellCount() : 0)} blockedSource={source}";
         }
 
         private void HandleOccupancyChanged()
         {
-            // Coalesce: a multi-cell building fires OccupancyChanged once per cell.
-            // Flag dirty and rebuild ONCE in LateUpdate instead of N times.
+            // Coalesce: a multi-cell building can fire more than once while it
+            // projects layer-0 blocks into the grid. Rebuild once in LateUpdate.
             if (rebuildWhenOccupancyChanges)
             {
                 dirty = true;
@@ -285,7 +293,7 @@ namespace Pathfinding
                 return goalCell;
             }
 
-            if (grid.InBounds(goalCell) && !grid.IsOccupied(goalCell))
+            if (grid.InBounds(goalCell) && !IsCellBlocked(goalCell))
             {
                 return goalCell;
             }
@@ -303,7 +311,7 @@ namespace Pathfinding
                         }
 
                         Vector2Int c = new Vector2Int(goalCell.x + dx, goalCell.y + dz);
-                        if (grid.InBounds(c) && !grid.IsOccupied(c))
+                        if (grid.InBounds(c) && !IsCellBlocked(c))
                         {
                             return c;
                         }
@@ -314,11 +322,67 @@ namespace Pathfinding
             return goalCell;
         }
 
-        private void ResolveGrid()
+        private void ResolveReferences()
         {
             if (grid == null)
             {
                 grid = FindFirstObjectByType<GridBuildSystem>();
+            }
+
+            if (buildController == null)
+            {
+                buildController = FindFirstObjectByType<BuildPlacementController>();
+            }
+
+            if (isActiveAndEnabled)
+            {
+                RefreshSubscriptions();
+            }
+        }
+
+        private void RefreshSubscriptions()
+        {
+            if (subscribedGrid != grid)
+            {
+                if (subscribedGrid != null)
+                {
+                    subscribedGrid.OccupancyChanged -= HandleOccupancyChanged;
+                }
+
+                subscribedGrid = grid;
+                if (subscribedGrid != null)
+                {
+                    subscribedGrid.OccupancyChanged += HandleOccupancyChanged;
+                }
+            }
+
+            if (subscribedBuildController != buildController)
+            {
+                if (subscribedBuildController != null)
+                {
+                    subscribedBuildController.PathfindingProjectionChanged -= HandleOccupancyChanged;
+                }
+
+                subscribedBuildController = buildController;
+                if (subscribedBuildController != null)
+                {
+                    subscribedBuildController.PathfindingProjectionChanged += HandleOccupancyChanged;
+                }
+            }
+        }
+
+        private void ClearSubscriptions()
+        {
+            if (subscribedGrid != null)
+            {
+                subscribedGrid.OccupancyChanged -= HandleOccupancyChanged;
+                subscribedGrid = null;
+            }
+
+            if (subscribedBuildController != null)
+            {
+                subscribedBuildController.PathfindingProjectionChanged -= HandleOccupancyChanged;
+                subscribedBuildController = null;
             }
         }
 
@@ -411,7 +475,17 @@ namespace Pathfinding
         {
             return grid != null
                 && grid.InBounds(cell)
-                && !grid.IsOccupied(cell);
+                && !IsCellBlocked(cell);
+        }
+
+        private bool IsCellBlocked(Vector2Int cell)
+        {
+            if (buildController != null && buildController.IsPathBlockedAtCell(cell))
+            {
+                return true;
+            }
+
+            return grid != null && grid.IsOccupied(cell);
         }
 
         // A diagonal step is only allowed if both shared cardinal cells are open,

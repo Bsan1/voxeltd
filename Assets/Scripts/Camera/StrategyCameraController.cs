@@ -9,6 +9,7 @@ public class StrategyCameraController : MonoBehaviour
     public float edgePanPixels = 24f;
 
     [Header("Zoom")]
+    [SerializeField] private bool enableScrollZoom = false;
     public float zoomSpeed = 18f;
     public float minHeight = 4f;
     public float maxHeight = 18f;
@@ -74,6 +75,11 @@ public class StrategyCameraController : MonoBehaviour
 
     private void HandleZoom()
     {
+        if (!enableScrollZoom)
+        {
+            return;
+        }
+
         float scroll = Input.mouseScrollDelta.y;
         if (Mathf.Abs(scroll) <= 0.001f)
         {
@@ -122,36 +128,5 @@ public class StrategyCameraController : MonoBehaviour
     private static float NormalizeAngle(float angle)
     {
         return angle > 180f ? angle - 360f : angle;
-    }
-
-    // --- Deterministic, bridge-callable control --------------------------------
-    // Update() only reads live Input.*, which OS key injection can't reach when
-    // the Unity window isn't focused (validation runs it in the background).
-    // These apply a fixed step (no Time.deltaTime, no Input) so the camera can be
-    // moved deterministically through script.execute, and they double as a UI API.
-
-    public string PanBy(float x, float z)
-    {
-        Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
-        Vector3 right = Vector3.ProjectOnPlane(transform.right, Vector3.up).normalized;
-        transform.position += (right * x + forward * z) * panSpeed;
-        return $"PanBy({x},{z}) -> {transform.position}";
-    }
-
-    public string ZoomBy(float amount)
-    {
-        Vector3 next = transform.position + transform.forward * (amount * zoomSpeed);
-        next.y = Mathf.Clamp(next.y, minHeight, maxHeight);
-        transform.position = next;
-        return $"ZoomBy({amount}) -> {transform.position}";
-    }
-
-    // Parameterless smoke test for bridge validation: nudges the camera a fixed
-    // amount and reports before/after world position (expect them to differ).
-    public string TestNudge()
-    {
-        Vector3 before = transform.position;
-        PanBy(1f, 1f);
-        return $"TestNudge before={before} after={transform.position}";
     }
 }

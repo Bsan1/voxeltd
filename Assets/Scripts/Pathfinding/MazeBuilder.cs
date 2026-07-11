@@ -14,6 +14,7 @@ namespace Pathfinding
     {
         [Header("References")]
         [SerializeField] private GridBuildSystem grid;
+        [SerializeField] private BuildPlacementController buildController;
         [SerializeField] private PathAgentSwarmSpawner spawner;
         [SerializeField] private GridFlowField flowField;
 
@@ -56,6 +57,11 @@ namespace Pathfinding
 
             System.Random rng = new System.Random(seed);
 
+            if (buildController != null)
+            {
+                buildController.ClearAllPlacedBuildings();
+            }
+
             grid.ClearAll();
             int walls = BuildMaze();
             CarveGoalArea();
@@ -86,6 +92,7 @@ namespace Pathfinding
         {
             if (grid == null) grid = GetComponent<GridBuildSystem>();
             if (grid == null) grid = FindFirstObjectByType<GridBuildSystem>();
+            if (buildController == null) buildController = FindFirstObjectByType<BuildPlacementController>();
             if (spawner == null) spawner = GetComponent<PathAgentSwarmSpawner>();
             if (spawner == null) spawner = FindFirstObjectByType<PathAgentSwarmSpawner>();
             if (flowField == null) flowField = GetComponent<GridFlowField>();

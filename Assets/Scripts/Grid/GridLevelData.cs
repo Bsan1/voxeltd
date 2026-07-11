@@ -6,6 +6,21 @@ public class GridLevelData : ScriptableObject
 {
     public List<GridCellData> cells = new List<GridCellData>();
 
+    // A placed building as ONE entity (type + where + facing), so a multi-cell
+    // building survives save/load as a single building — not loose cells. This is
+    // what lets removal, the overlap-fade, and attached data treat it as a unit.
+    [System.Serializable]
+    public class BuildingRecord
+    {
+        public string buildingId;
+        public int anchorX;
+        public int anchorY;
+        public int direction;
+        public int layer;
+    }
+
+    public List<BuildingRecord> buildings = new List<BuildingRecord>();
+
     public int Count => cells?.Count ?? 0;
 
     public void RebuildDictionary(Dictionary<Vector2Int, GridCellData> target)

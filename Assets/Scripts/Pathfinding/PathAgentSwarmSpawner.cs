@@ -210,6 +210,14 @@ namespace Pathfinding
             return $"{nameof(PathAgentSwarmSpawner)} spawned={spawnedAgents.Count} lastMs={LastSpawnMilliseconds:0.###}";
         }
 
+        // The cells agents actually start from (same set used to spawn). Used by the
+        // path overlay to trace the routes agents will travel.
+        public List<Vector2Int> GetSpawnCells()
+        {
+            ResolveReferences();
+            return (grid != null && flowField != null) ? BuildSpawnCells() : new List<Vector2Int>();
+        }
+
         private void ResolveReferences()
         {
             if (grid == null)
@@ -293,7 +301,7 @@ namespace Pathfinding
             List<Vector2Int> cells = new List<Vector2Int>(set.Count);
             foreach (Vector2Int c in set)
             {
-                if (!grid.IsOccupied(c) && flowField.HasPath(c))
+                if (!flowField.IsBlocked(c) && flowField.HasPath(c))
                 {
                     cells.Add(c);
                 }
